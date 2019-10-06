@@ -1,8 +1,9 @@
 set(SOURCE_FILES
     "common.h"
     "common.cu"
-    "icp.h"
-    "icp.cu"
+    "cpu.h"
+    "cpu.cu"
+	"svd.h"
     )
 
 cuda_add_library(
