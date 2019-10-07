@@ -50,15 +50,16 @@ set(headers
     src/cudaMat4.hpp
     src/glslUtility.hpp
     src/kernel.h
-    src/main.hpp
     src/utilityCore.hpp
+	src/testing_helpers.hpp
+	src/main.hpp
     )
 
 set(sources
     src/glslUtility.cpp
     src/kernel.cu
-    src/main.cpp
     src/utilityCore.cpp
+	src/main.cpp
     )
 
 list(SORT headers)
@@ -70,15 +71,19 @@ source_group(Sources FILES ${sources})
 include_directories(.)
 link_directories(${CUDA_TOOLKIT_ROOT_DIR}/lib/x64)
 add_subdirectory(scan_matching)
-cuda_add_executable(${CMAKE_PROJECT_NAME}
-    "src/main.cpp"
-	"src/testing_helpers.hpp"
-    )
+cuda_add_executable(${CMAKE_PROJECT_NAME} ${sources} ${headers} )
 target_link_libraries(${CMAKE_PROJECT_NAME} 
 	${LIBRARIES}
 	scan_matching
+	cublas
     )
-
+add_custom_command(
+    TARGET ${CMAKE_PROJECT_NAME}
+    PRE_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        ${CMAKE_SOURCE_DIR}/shaders
+        ${CMAKE_BINARY_DIR}/shaders
+    )
 
 
 

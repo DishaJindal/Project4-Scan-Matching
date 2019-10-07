@@ -1,7 +1,6 @@
 #pragma once
-
 namespace ScanMatching {
-	namespace CPU {
+	namespace GPU {
 
 		void init(int xnum);
 

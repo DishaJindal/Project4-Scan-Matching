@@ -3,6 +3,8 @@ set(SOURCE_FILES
     "common.cu"
     "cpu.h"
     "cpu.cu"
+	"gpu.h"
+    "gpu.cu"
 	"svd.h"
     )
 
