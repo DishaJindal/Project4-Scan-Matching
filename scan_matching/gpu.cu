@@ -1,5 +1,5 @@
 #include "common.h"
-#include "cpu.h"
+#include "gpu.h"
 #include "device_launch_parameters.h"
 #include "glm/glm.hpp"
 #include "svd3_cuda.h"
@@ -10,21 +10,27 @@
 #include <thrust/generate.h>
 #include <thrust/reduce.h>
 #include <thrust/functional.h>
-
+#include "kdtree.h"
 
 #define blockSize 128
-cublasHandle_t cublas_handle;
+#define KDTREE 1
 
-// Reference: https://solarianprogrammer.com/2012/05/31/matrix-multiplication-cuda-cublas-curand-thrust/
-// Matrix Multiplication
-// nr_rows_A, nr_cols_A, nr_cols_B
-void gpu_blas_mmul(const float *A, const float *B, float *C, const int nr_rows_A, const int nr_cols_A, const int nr_cols_B) {
-	int lda = nr_rows_A, ldb = nr_cols_A, ldc = nr_rows_A;
-	const float alf = 1;
-	const float bet = 0;
-	const float *alpha = &alf;
-	const float *beta = &bet;
-	cublasSgemm(cublas_handle, CUBLAS_OP_N, CUBLAS_OP_N, nr_rows_A, nr_cols_B, nr_cols_A, alpha, A, lda, B, ldb, beta, C, ldc);
+__global__ void print_kernel(float* points, int num) {
+	for (int i = 0; i < num; i++) {
+		printf("%f\t%f\t%f\n", points[3 * i], points[3 * i + 1], points[3 * i + 2]);
+	}
+}
+
+__global__ void print_v4_kernel(glm::vec4* points, int num) {
+	for (int i = 0; i < num; i++) {
+		printf("%f\t%f\t%f\t%f\n", points[i].x, points[i].y, points[i].z, points[i].w);
+	}
+}
+
+__global__ void print_v3_kernel(glm::vec3* points, int num) {
+	for (int i = 0; i < num; i++) {
+		printf("%f\t%f\t%f\n", points[i].x, points[i].y, points[i].z);
+	}
 }
 
 namespace StreamCompaction {
@@ -66,12 +72,7 @@ namespace ScanMatching {
 	namespace GPU {
 
 		float *cyp, *tcyp, *m, *u, *s, *v, *tv, *R, *R1, *T, *rxmean, *xr;
-
-		__global__ void print_kernel(float* points, int num) {
-			for (int i = 0; i <num; i++) {
-				printf("%f\t%f\t%f\n", points[3*i], points[3*i + 1], points[3*i + 2]);
-			}
-		}
+		glm::vec4 *tree;
 
 		__global__ void print_kernel2(float* points, int xnum) {
 			for (int i = 0; i < xnum; i++) {
@@ -79,7 +80,14 @@ namespace ScanMatching {
 			}
 		}
 
-		void init(int xnum) {
+		__global__ void float_to_vec3(int xnum, float* points, glm::vec3* points_vec) {
+			int i = (blockIdx.x * blockDim.x) + threadIdx.x;
+			if (i < xnum) {
+				points_vec[i] = glm::vec3(points[3 * i], points[3 * i + 1], points[3 * i + 2]);
+			}
+		}
+
+		void init(int xnum, float* ypoints) {
 			cudaMalloc((void**)&cyp, 3 * xnum * sizeof(float));
 			cudaMalloc((void**)&tcyp, 3 * xnum * sizeof(float));
 			cudaMalloc((void**)&m, 3 * 3 * sizeof(float));
@@ -92,7 +100,26 @@ namespace ScanMatching {
 			cudaMalloc((void**)&T, 3 * sizeof(float));
 			cudaMalloc((void**)&rxmean, 3 * sizeof(float));
 			cudaMalloc((void**)&xr, 3 * xnum * sizeof(float));
-			cublasCreate(&cublas_handle);
+			//cublasCreate(&cublas_handle);
+
+			// Build Tree
+			std::cout << "Building Tree\n";
+			print_kernel << <1, 1 >> > (ypoints, 4);
+			cudaDeviceSynchronize();
+			int size = 1 << ilog2ceil(xnum);
+			cudaMalloc((void**)&tree, size * sizeof(glm::vec4));
+			glm::vec3 *ypoints_vec;
+			cudaMalloc((void**)&ypoints_vec, xnum * sizeof(glm::vec3));
+			dim3 xnumBlocks((xnum + blockSize - 1) / blockSize);
+			float_to_vec3 << <xnumBlocks, blockSize >> > (xnum, ypoints, ypoints_vec);
+			build(tree, ypoints_vec, xnum);
+			cudaFree(ypoints_vec);
+
+			// Print
+			cudaDeviceSynchronize();
+			std::cout << "Built Tree\n";
+			print_v4_kernel << <1, 1 >> > (tree, 8);
+			cudaDeviceSynchronize();
 		}
 
 		__global__ void findCorrespondences(float* xp, float* yp, float* cyp, int xnum, int ynum) {
@@ -170,7 +197,6 @@ namespace ScanMatching {
 				for (int k = 0; k < n; k++) {
 					mat[p * i + j] += mat1[n * i + k] * mat2[p * k + j];
 				}
-
 			}
 		}
 
@@ -195,26 +221,7 @@ namespace ScanMatching {
 			cudaFree(tcyp);
 		}
 
-		void matrix_multiplication_test() {
-			float m1[8] = { 6.0f,	7.0f,	1.0f, -1.0f, 2.0f,	0.0f,	5.0f,	3.0f };
-			float m2[12] = { 4.0f,	6.0f, -3.0f, -2.0f,	0.0f,	1.0f, -4.0f,	2.0f,	5.0f, 7.0f,	8.0f,	9.0f, };
-			float *dev_m1, *dev_m2, *dev_m3;
-			cudaMalloc((void**)&dev_m1, 8 * sizeof(float));
-			cudaMalloc((void**)&dev_m2, 12 * sizeof(float));
-			cudaMalloc((void**)&dev_m3, 6 * sizeof(float));
-			cudaMemcpy(dev_m1, m1, 8 * sizeof(float), cudaMemcpyHostToDevice);
-			cudaMemcpy(dev_m2, m2, 12 * sizeof(float), cudaMemcpyHostToDevice);
-
-			dim3 xnumBlocks((12 + blockSize - 1) / blockSize);
-			matrix_multiplication<<<xnumBlocks, blockSize>>>(dev_m1, dev_m2, dev_m3, 2, 4, 3);
-			std::cout << "MM\n";
-			print_kernel << <1, 1 >> > (dev_m3, 2);
-			cudaDeviceSynchronize();
-		}
-
-
 		void icp(float* xp, float* yp, int xnum, int ynum) {
-			matrix_multiplication_test();
 			std::cout << "X0\n";
 			print_kernel << <1,1 >> > (xp, 2);
 			cudaDeviceSynchronize();
@@ -225,7 +232,11 @@ namespace ScanMatching {
 			std::cout << "Finding Correspondences..\n";
 			dim3 xnumBlocks((xnum + blockSize - 1) / blockSize);
 			dim3 totalBlocks((3*xnum + blockSize - 1) / blockSize);
-			findCorrespondences << <xnumBlocks, blockSize >> > (xp, yp, cyp, xnum, ynum);
+			#if KDTREE
+				
+			#else
+				findCorrespondences << <xnumBlocks, blockSize >> > (xp, yp, cyp, xnum, ynum);
+			#endif
 			std::cout << "Y Corr\n"; 
 			print_kernel << <1, 1 >> > (cyp, 5);
 			cudaDeviceSynchronize();
@@ -287,6 +298,38 @@ namespace ScanMatching {
 			cudaDeviceSynchronize();
 			std::cout << "End of this iteration\n";
 			cudaDeviceSynchronize();
+		}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+//////////////////////////////////////////TEST FUNCTIONS///////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////		
+		void matrix_multiplication_test() {
+			float m1[8] = { 6.0f,	7.0f,	1.0f, -1.0f, 2.0f,	0.0f,	5.0f,	3.0f };
+			float m2[12] = { 4.0f,	6.0f, -3.0f, -2.0f,	0.0f,	1.0f, -4.0f,	2.0f,	5.0f, 7.0f,	8.0f,	9.0f, };
+			float *dev_m1, *dev_m2, *dev_m3;
+			cudaMalloc((void**)&dev_m1, 8 * sizeof(float));
+			cudaMalloc((void**)&dev_m2, 12 * sizeof(float));
+			cudaMalloc((void**)&dev_m3, 6 * sizeof(float));
+			cudaMemcpy(dev_m1, m1, 8 * sizeof(float), cudaMemcpyHostToDevice);
+			cudaMemcpy(dev_m2, m2, 12 * sizeof(float), cudaMemcpyHostToDevice);
+
+			dim3 xnumBlocks((12 + blockSize - 1) / blockSize);
+			matrix_multiplication << <xnumBlocks, blockSize >> > (dev_m1, dev_m2, dev_m3, 2, 4, 3);
+			std::cout << "MM\n";
+			print_kernel << <1, 1 >> > (dev_m3, 2);
+			cudaDeviceSynchronize();
+		}
+		__device__ int fact(int f)
+		{
+			// Test using 			
+			// call_fact << <1, 1 >> > (5);
+			if (f == 0)
+				return 1;
+			else
+				return f * fact(f - 1);
+		}
+		__global__ void call_fact(int f) {
+			printf("Factorial: %d\n", fact(f));
 		}
 	}
 }

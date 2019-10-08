@@ -7,6 +7,8 @@ set(SOURCE_FILES
     "gpu.cu"
 	"svd3.h"
 	"svd3_cuda.h"
+	"kdtree.cu"
+	"kdtree.h"
     )
 
 cuda_add_library(
