@@ -16,7 +16,7 @@
 // Configuration
 // ================
 #define VISUALIZE 1
-#define NAIVE 0
+#define NAIVE 1
 #define PARALLEL 1
 
 int N1;
@@ -254,7 +254,6 @@ void runCUDA(int N1, int N2, float* xpoints, float* ypoints) {
 	ScanMatching::copyToDevice(N1, N2, xpoints, ypoints);
 #elif PARALLEL
 	ScanMatching::GPU::icp(ScanMatching::getDevPos(), ScanMatching::getDevPos() + 3 * N1, N1, N2);
-	ScanMatching::copyToDevice(N1, N2, xpoints, ypoints);
 #endif
 
 #if VISUALIZE
@@ -272,7 +271,7 @@ void mainLoop(int N1, int N2, float* xpoints, float* ypoints) {
 	int iter = 0;
 	while (!glfwWindowShouldClose(window)) {
 		std::cout << "\nIter\t" << iter++ << std::endl;
-		if (iter >= 10)
+		if (iter >= 200)
 			break;
 		glfwPollEvents();
 

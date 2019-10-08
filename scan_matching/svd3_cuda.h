@@ -4,68 +4,39 @@
 **
 ** Quick singular value decomposition as described by:
 ** A. McAdams, A. Selle, R. Tamstorf, J. Teran and E. Sifakis,
-** "Computing the Singular Value Decomposition of 3x3 matrices
-** with minimal branching and elementary floating point operations",
+** Computing the Singular Value Decomposition of 3x3 matrices
+** with minimal branching and elementary floating point operations,
 **  University of Wisconsin - Madison technical report TR1690, May 2011
 **
-**	OPTIMIZED CPU VERSION
+**	OPTIMIZED GPU VERSION
 ** 	Implementation by: Eric Jang
 **
 **  13 Apr 2014
 **
 **************************************************************************/
 
-
-#ifndef SVD3_H
-#define SVD3_H
+#ifndef SVD3_CUDA_H
+#define SVD3_CUDA_H
 
 #define _gamma 5.828427124 // FOUR_GAMMA_SQUARED = sqrt(8)+3;
 #define _cstar 0.923879532 // cos(pi/8)
 #define _sstar 0.3826834323 // sin(p/8)
 #define EPSILON 1e-6
 
-#include <math.h>
+#include <cuda.h>
+#include "math.h" // CUDA math library
 
-/* This is a novel and fast routine for the reciprocal square root of an
-IEEE float (single precision).
 
-http://www.lomont.org/Math/Papers/2003/InvSqrt.pdf
-http://playstation2-linux.com/download/p2lsd/fastrsqrt.pdf
-http://www.beyond3d.com/content/articles/8/
-*/
-//inline float rsqrt(float x) {
-//	// int ihalf = *(int *)&x - 0x00800000; // Alternative to next line,
-//	// float xhalf = *(float *)&ihalf;      // for sufficiently large nos.
-//	float xhalf = 0.5f*x;
-//	int i = *(int *)&x;          // View x as an int.
-// // i = 0x5f3759df - (i >> 1);   // Initial guess (traditional).
-//	i = 0x5f375a82 - (i >> 1);   // Initial guess (slightly better).
-//	x = *(float *)&i;            // View i as float.
-//	x = x * (1.5f - xhalf * x*x);    // Newton step.
-// // x = x*(1.5008908 - xhalf*x*x);  // Newton step for a balanced error.
-//	return x;
-//}
+// CUDA's rsqrt seems to be faster than the inlined approximation?
 
-/* This is rsqrt with an additional step of the Newton iteration, for
-increased accuracy. The constant 0x5f37599e makes the relative error
-range from 0 to -0.00000463.
-   You can't balance the error by adjusting the constant. */
-inline float rsqrt1(float x) {
-	float xhalf = 0.5f*x;
-	int i = *(int *)&x;          // View x as an int.
-	i = 0x5f37599e - (i >> 1);   // Initial guess.
-	x = *(float *)&i;            // View i as float.
-	x = x * (1.5f - xhalf * x*x);    // Newton step.
-	x = x * (1.5f - xhalf * x*x);    // Newton step again.
-	return x;
-}
-
-inline float accurateSqrt(float x)
+__host__ __device__ __forceinline__
+float accurateSqrt(float x)
 {
-	return x * rsqrt1(x);
+	return x * rsqrt(x);
 }
 
-inline void condSwap(bool c, float &X, float &Y)
+__host__ __device__ __forceinline__
+void condSwap(bool c, float &X, float &Y)
 {
 	// used in step 2
 	float Z = X;
@@ -73,7 +44,8 @@ inline void condSwap(bool c, float &X, float &Y)
 	Y = c ? Z : Y;
 }
 
-inline void condNegSwap(bool c, float &X, float &Y)
+__host__ __device__ __forceinline__
+void condNegSwap(bool c, float &X, float &Y)
 {
 	// used in step 2 and 3
 	float Z = -X;
@@ -82,7 +54,8 @@ inline void condNegSwap(bool c, float &X, float &Y)
 }
 
 // matrix multiplication M = A * B
-inline void multAB(float a11, float a12, float a13,
+__host__ __device__ __forceinline__
+void multAB(float a11, float a12, float a13,
 	float a21, float a22, float a23,
 	float a31, float a32, float a33,
 	//
@@ -101,7 +74,8 @@ inline void multAB(float a11, float a12, float a13,
 }
 
 // matrix multiplication M = Transpose[A] * B
-inline void multAtB(float a11, float a12, float a13,
+__host__ __device__ __forceinline__
+void multAtB(float a11, float a12, float a13,
 	float a21, float a22, float a23,
 	float a31, float a32, float a33,
 	//
@@ -118,7 +92,8 @@ inline void multAtB(float a11, float a12, float a13,
 	m31 = a13 * b11 + a23 * b21 + a33 * b31; m32 = a13 * b12 + a23 * b22 + a33 * b32; m33 = a13 * b13 + a23 * b23 + a33 * b33;
 }
 
-inline void quatToMat3(const float * qV,
+__host__ __device__ __forceinline__
+void quatToMat3(const float * qV,
 	float &m11, float &m12, float &m13,
 	float &m21, float &m22, float &m23,
 	float &m31, float &m32, float &m33
@@ -144,7 +119,8 @@ inline void quatToMat3(const float * qV,
 	m31 = 2 * (qxz - qwy); m32 = 2 * (qyz + qwx); m33 = 1 - 2 * (qxx + qyy);
 }
 
-inline void approximateGivensQuaternion(float a11, float a12, float a22, float &ch, float &sh)
+__host__ __device__ __forceinline__
+void approximateGivensQuaternion(float a11, float a12, float a22, float &ch, float &sh)
 {
 	/*
 		 * Given givens angle computed by approximateGivensAngles,
@@ -153,15 +129,13 @@ inline void approximateGivensQuaternion(float a11, float a12, float a22, float &
 	ch = 2 * (a11 - a22);
 	sh = a12;
 	bool b = _gamma * sh*sh < ch*ch;
-	// fast rsqrt function suffices
-	// rsqrt2 (https://code.google.com/p/lppython/source/browse/algorithm/HDcode/newCode/rsqrt.c?r=26)
-	// is even faster but results in too much error
 	float w = rsqrt(ch*ch + sh * sh);
-	ch = b ? w * ch : (float)_cstar;
-	sh = b ? w * sh : (float)_sstar;
+	ch = b ? w * ch : _cstar;
+	sh = b ? w * sh : _sstar;
 }
 
-inline void jacobiConjugation(const int x, const int y, const int z,
+__host__ __device__ __forceinline__
+void jacobiConjugation(const int x, const int y, const int z,
 	float &s11,
 	float &s21, float &s22,
 	float &s31, float &s32, float &s33,
@@ -214,13 +188,15 @@ inline void jacobiConjugation(const int x, const int y, const int z,
 
 }
 
-inline float dist2(float x, float y, float z)
+__host__ __device__ __forceinline__
+float dist2(float x, float y, float z)
 {
 	return x * x + y * y + z * z;
 }
 
 // finds transformation that diagonalizes a symmetric matrix
-inline void jacobiEigenanlysis( // symmetric matrix
+__host__ __device__ __forceinline__
+void jacobiEigenanlysis( // symmetric matrix
 	float &s11,
 	float &s21, float &s22,
 	float &s31, float &s32, float &s33,
@@ -240,8 +216,8 @@ inline void jacobiEigenanlysis( // symmetric matrix
 	}
 }
 
-
-inline void sortSingularValues(// matrix that we want to decompose
+__host__ __device__ __forceinline__
+void sortSingularValues(// matrix that we want to decompose
 	float &b11, float &b12, float &b13,
 	float &b21, float &b22, float &b23,
 	float &b31, float &b32, float &b33,
@@ -270,16 +246,16 @@ inline void sortSingularValues(// matrix that we want to decompose
 	condNegSwap(c, b32, b33); condNegSwap(c, v32, v33);
 }
 
-
+__host__ __device__ __forceinline__
 void QRGivensQuaternion(float a1, float a2, float &ch, float &sh)
 {
 	// a1 = pivot point on diagonal
 	// a2 = lower triangular entry we want to annihilate
-	float epsilon = (float)EPSILON;
+	float epsilon = EPSILON;
 	float rho = accurateSqrt(a1*a1 + a2 * a2);
 
 	sh = rho > epsilon ? a2 : 0;
-	ch = fabsf(a1) + fmaxf(rho, epsilon);
+	ch = fabs(a1) + fmax(rho, epsilon);
 	bool b = a1 < 0;
 	condSwap(b, sh, ch);
 	float w = rsqrt(ch*ch + sh * sh);
@@ -287,8 +263,8 @@ void QRGivensQuaternion(float a1, float a2, float &ch, float &sh)
 	sh *= w;
 }
 
-
-inline void QRDecomposition(// matrix that we want to decompose
+__host__ __device__ __forceinline__
+void QRDecomposition(// matrix that we want to decompose
 	float b11, float b12, float b13,
 	float b21, float b22, float b23,
 	float b31, float b32, float b33,
@@ -352,6 +328,7 @@ inline void QRDecomposition(// matrix that we want to decompose
 	q33 = (-1 + 2 * sh22)*(-1 + 2 * sh32);
 }
 
+__host__ __device__ __forceinline__
 void svd(// input A
 	float a11, float a12, float a13,
 	float a21, float a22, float a23,
@@ -402,7 +379,8 @@ void svd(// input A
 }
 
 /// polar decomposition can be reconstructed trivially from SVD result
-// A = UP
+/// A = UP
+__host__ __device__ __forceinline__
 void pd(float a11, float a12, float a13,
 	float a21, float a22, float a23,
 	float a31, float a32, float a33,

@@ -2,7 +2,7 @@
 #include "cpu.h"
 #include "device_launch_parameters.h"
 #include "glm/glm.hpp"
-#include "svd.h"
+#include "svd3.h"
 #include <iostream>
 
 namespace ScanMatching {
@@ -129,23 +129,23 @@ namespace ScanMatching {
 		void icp(float* xp, float* yp, int xnum, int ynum) {
 				std::cout << "X0\n";
 				print(xp, 2);
-				//std::cout << "Y0\n";
-				//print(yp, 5);
+				std::cout << "y0\n";
+				print(yp, 5);
 
 				std::cout << "Finding Correspondences..\n";
 				findCorrespondences(xp, yp, cyp, xnum, ynum);
 
-				//std::cout << "Y Corr\n";
-				//print(cyp, 5);
+				std::cout << "Y Corr\n";
+				print(cyp, 5);
 					
 				std::cout << "Mean Centering\n";
 				float* xmean = meanCenter(xp, xnum);
 				print(xp, 1);
-				//std::cout << "X Mean\n";
-				//print(xmean, 1);
+				std::cout << "X Mean\n";
+				print(xmean, 1);
 				float* ymean = meanCenter(cyp, xnum);
-				//std::cout << "Y Mean\n";
-				//print(ymean, 1);
+				std::cout << "Y Mean\n";
+				print(ymean, 1);
 					
 				std::cout << "Transposing correspondences\n";
 				transpose(cyp, xnum, 3, tcyp);
@@ -180,7 +180,8 @@ namespace ScanMatching {
 				print(T, 1);
 
 				std::cout << "Updating Positions\n";
-				matrix_multiplication(xp, R, xr, xnum, 3, 3);
+				transpose(R, 3, 3, R1);
+				matrix_multiplication(xp, R1, xr, xnum, 3, 3); /////// Change R to R Transpose
 				std::cout << "xr\n";
 				print(xp, 1);
 				print(xr, 1);

@@ -2,9 +2,14 @@
 #include "cpu.h"
 #include "device_launch_parameters.h"
 #include "glm/glm.hpp"
-#include "svd.h"
+#include "svd3_cuda.h"
 #include <iostream>
 #include <cublas_v2.h>
+#include <thrust/host_vector.h>
+#include <thrust/device_vector.h>
+#include <thrust/generate.h>
+#include <thrust/reduce.h>
+#include <thrust/functional.h>
 
 
 #define blockSize 128
@@ -61,9 +66,16 @@ namespace ScanMatching {
 	namespace GPU {
 
 		float *cyp, *tcyp, *m, *u, *s, *v, *tv, *R, *R1, *T, *rxmean, *xr;
-		void print(float* points, int num) {
-			for (int i = 0; i <= 3 * num - 3; i += 3) {
-				std::cout << points[i] << "\t" << points[i + 1] << "\t" << points[i + 2] << "\n";
+
+		__global__ void print_kernel(float* points, int num) {
+			for (int i = 0; i <num; i++) {
+				printf("%f\t%f\t%f\n", points[3*i], points[3*i + 1], points[3*i + 2]);
+			}
+		}
+
+		__global__ void print_kernel2(float* points, int xnum) {
+			for (int i = 0; i < xnum; i++) {
+				printf("%f\t%f\t%f\n", points[i], points[40097 + i], points[2 * 40097 + i]);
 			}
 		}
 
@@ -116,79 +128,165 @@ namespace ScanMatching {
 				xp[3 * i + 2] -= mean[2];
 			}
 		}
+		__global__ void callSVD(float* m, float* u, float* s, float* v) {
+			int i = (blockIdx.x * blockDim.x) + threadIdx.x;
+			if (i == 0) {
+				svd(m[0], m[1], m[2], m[3], m[4], m[5], m[6], m[7], m[8],
+					u[0], u[1], u[2], u[3], u[4], u[5], u[6], u[7], u[8],
+					s[0], s[1], s[2], s[3], s[4], s[5], s[6], s[7], s[8],
+					v[0], v[1], v[2], v[3], v[4], v[5], v[6], v[7], v[8]);
+			}
+		}
+
+		__global__ void subtract(const float *v1, const float *v2, int length, float *v) {
+			int i = (blockIdx.x * blockDim.x) + threadIdx.x;
+			if (i < length) {
+				v[i] = v1[i] - v2[i];
+			}
+		}
+
+		__global__ void add_translation(float *xp, const float *xr, const float* T, int xnum) {
+			int i = (blockIdx.x * blockDim.x) + threadIdx.x;
+			if (i < xnum) {
+				xp[3 * i] = xr[3 * i] + T[0];
+				xp[3 * i + 1] = xr[3 * i + 1] + T[1];
+				xp[3 * i + 2] = xr[3 * i + 2] + T[2];
+			}
+		}
+
+		__global__ void divide(float* arr, int length, float divisor) {
+			int i = (blockIdx.x * blockDim.x) + threadIdx.x;
+			if (i < length) {
+				arr[i] /= divisor;
+			}
+		}
+
+		__global__ void matrix_multiplication(const float *mat1, const float *mat2, float *mat, int m, int n, int p) {
+			int idx = (blockIdx.x * blockDim.x) + threadIdx.x;
+			if (idx < m*p) {
+				int i = idx / p;
+				int j = idx % p;
+				mat[p * i + j] = 0;
+				for (int k = 0; k < n; k++) {
+					mat[p * i + j] += mat1[n * i + k] * mat2[p * k + j];
+				}
+
+			}
+		}
 
 		void meanCenter(float* xp, float* cyp, int xnum, float *xmean, float *ymean) {
 			float *txp, *tcyp;
 			cudaMalloc((void**)&txp, 3 * xnum * sizeof(float));
 			cudaMalloc((void**)&tcyp, 3 * xnum * sizeof(float));
-			dim3 fullBlocksPerGrid((xnum + blockSize - 1) / blockSize);
-
+			dim3 fullBlocksPerGrid((3*xnum + blockSize - 1) / blockSize);
 			transpose << <fullBlocksPerGrid, blockSize >> > (xp, txp, xnum, 3);
+			transpose << <fullBlocksPerGrid, blockSize >> > (cyp, tcyp, xnum, 3);
 			StreamCompaction::sumArray(xnum, xmean, txp);
 			StreamCompaction::sumArray(xnum, xmean + 1, txp + xnum);
 			StreamCompaction::sumArray(xnum, xmean + 2, txp + 2*xnum);
-
-			transpose << <fullBlocksPerGrid, blockSize >> > (cyp, tcyp, xnum, 3);
 			StreamCompaction::sumArray(xnum, ymean, tcyp);
 			StreamCompaction::sumArray(xnum, ymean + 1, tcyp + xnum);
 			StreamCompaction::sumArray(xnum, ymean + 2, tcyp + 2 * xnum);
-			cudaFree(txp);
-			cudaFree(tcyp);
-
+			divide << <1, 3 >> > (xmean, 3, xnum);
+			divide << <1, 3 >> > (ymean, 3, xnum);
 			subtractMean << <fullBlocksPerGrid, blockSize >> > (xp, xmean, xnum);
 			subtractMean << <fullBlocksPerGrid, blockSize >> > (cyp, ymean, xnum);
+			cudaFree(txp);
+			cudaFree(tcyp);
 		}
 
+		void matrix_multiplication_test() {
+			float m1[8] = { 6.0f,	7.0f,	1.0f, -1.0f, 2.0f,	0.0f,	5.0f,	3.0f };
+			float m2[12] = { 4.0f,	6.0f, -3.0f, -2.0f,	0.0f,	1.0f, -4.0f,	2.0f,	5.0f, 7.0f,	8.0f,	9.0f, };
+			float *dev_m1, *dev_m2, *dev_m3;
+			cudaMalloc((void**)&dev_m1, 8 * sizeof(float));
+			cudaMalloc((void**)&dev_m2, 12 * sizeof(float));
+			cudaMalloc((void**)&dev_m3, 6 * sizeof(float));
+			cudaMemcpy(dev_m1, m1, 8 * sizeof(float), cudaMemcpyHostToDevice);
+			cudaMemcpy(dev_m2, m2, 12 * sizeof(float), cudaMemcpyHostToDevice);
+
+			dim3 xnumBlocks((12 + blockSize - 1) / blockSize);
+			matrix_multiplication<<<xnumBlocks, blockSize>>>(dev_m1, dev_m2, dev_m3, 2, 4, 3);
+			std::cout << "MM\n";
+			print_kernel << <1, 1 >> > (dev_m3, 2);
+			cudaDeviceSynchronize();
+		}
+
+
 		void icp(float* xp, float* yp, int xnum, int ynum) {
+			matrix_multiplication_test();
+			std::cout << "X0\n";
+			print_kernel << <1,1 >> > (xp, 2);
+			cudaDeviceSynchronize();
+			std::cout << "Y0\n";
+			print_kernel << <1, 1 >> > (yp, 5);
+			cudaDeviceSynchronize();
+
 			std::cout << "Finding Correspondences..\n";
-			dim3 fullBlocksPerGrid((xnum + blockSize - 1) / blockSize);
-			findCorrespondences << <fullBlocksPerGrid, blockSize >> > (xp, yp, cyp, xnum, ynum);
+			dim3 xnumBlocks((xnum + blockSize - 1) / blockSize);
+			dim3 totalBlocks((3*xnum + blockSize - 1) / blockSize);
+			findCorrespondences << <xnumBlocks, blockSize >> > (xp, yp, cyp, xnum, ynum);
+			std::cout << "Y Corr\n"; 
+			print_kernel << <1, 1 >> > (cyp, 5);
+			cudaDeviceSynchronize();
 
 			std::cout << "Mean Centering\n";
 			float *xmean, *ymean;
 			cudaMalloc((void**)&xmean, 3 * sizeof(float));
 			cudaMalloc((void**)&ymean, 3 * sizeof(float));
+			cudaMemset(xmean, 0.0f, 3);
+			cudaMemset(ymean, 0.0f, 3);
 			meanCenter(xp, cyp, xnum, xmean, ymean);
+			cudaDeviceSynchronize();
+			print_kernel << <1, 1 >> > (xmean, 1);
+			cudaDeviceSynchronize();
+			print_kernel << <1, 1 >> > (ymean, 1);
+			cudaDeviceSynchronize();
 
 			std::cout << "Transposing correspondences\n";
-			transpose << <fullBlocksPerGrid, blockSize >> > (cyp, tcyp, xnum, 3);
+			transpose << <totalBlocks, blockSize >> > (cyp, tcyp, xnum, 3);
 
-			std::cout << "Calculating X.Yt\n";
-			gpu_blas_mmul(tcyp, xp, m, 3, xnum, 3);
+			std::cout << "Calculating Yt,X\n";
+			matrix_multiplication << <1, 9 >> > (tcyp, xp, m, 3, xnum, 3);
 
 			std::cout << "Input\n";
-			print(m, 3);
+			print_kernel<<<1,1>>>(m, 3);
+			cudaDeviceSynchronize();
 			std::cout << "SVD\n";
 			cudaMemset(u, 0.0f, 9);
 			cudaMemset(s, 0.0f, 9);
 			cudaMemset(v, 0.0f, 9);
-			/*svd(m[0], m[1], m[2], m[3], m[4], m[5], m[6], m[7], m[8],
-				u[0], u[1], u[2], u[3], u[4], u[5], u[6], u[7], u[8],
-				s[0], s[1], s[2], s[3], s[4], s[5], s[6], s[7], s[8],
-				v[0], v[1], v[2], v[3], v[4], v[5], v[6], v[7], v[8]);
+			callSVD << <1, 1 >> > (m, u, s, v);
+			cudaDeviceSynchronize();
 			std::cout << "U\n";
-			print(u, 3);
+			print_kernel << <1, 1 >> > (u, 3);
+			cudaDeviceSynchronize();
 			std::cout << "V\n";
-			print(v, 3);
+			print_kernel << <1, 1 >> > (v, 3);
+			cudaDeviceSynchronize();
 
 			std::cout << "Calculating R\n";
-			transpose(v, 3, 3, tv);
-
-			matrix_multiplication(u, tv, R, 3, 3, 3);
-			print(R, 3);
+			transpose<<<1, 9>>>(v, tv, 3, 3);
+			matrix_multiplication << <1, 9 >> > (u, tv, R, 3, 3, 3);
+			print_kernel << <1, 1 >> > (R, 3);
+			cudaDeviceSynchronize();
 
 			std::cout << "Calculating T\n";
-			matrix_multiplication(R, xmean, rxmean, 3, 3, 1);
-			subtract(ymean, rxmean, 3, T);
-			print(T, 1);
+			matrix_multiplication << <1, 3 >> > (R, xmean, rxmean, 3, 3, 1);
+			subtract << <1, 3 >> > (ymean, rxmean, 3, T);
+			print_kernel << <1, 1 >> > (T, 1);
+			cudaDeviceSynchronize();
 
 			std::cout << "Updating Positions\n";
-			matrix_multiplication(xp, R, xr, xnum, 3, 3);
-			std::cout << "xr\n";
-			print(xp, 1);
-			print(xr, 1);
-			add_translation(xp, xr, T, xnum);
-			print(xp, 2);*/
+			float *tR;
+			cudaMalloc((void**)&tR, 9 * sizeof(float));
+			transpose << <1, 9 >> > (R, tR, 3, 3);
+			matrix_multiplication << <totalBlocks, blockSize >> > (xp, tR, xr, xnum, 3, 3);
+			add_translation<<< xnumBlocks, blockSize>>>(xp, xr, T, xnum);
+			print_kernel << <1, 1 >> > (xp, 2);
+			cudaDeviceSynchronize();
+			std::cout << "End of this iteration\n";
+			cudaDeviceSynchronize();
 		}
 	}
 }
