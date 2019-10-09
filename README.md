@@ -37,10 +37,12 @@ This project implements **Iterative Closest Point Algorithm** for scan matching.
   #define NAIVE 0
   #define NAIVE_GPU 1
   #define KDTREE 1
-  
 ```
 ### CPU 
 
 ### Naive GPU 
 
 ### KD-Tree 
+<p align="center"><img src="https://github.com/DishaJindal/Project4-Scan-Matching/blob/submission/img/3dtree.png" width="400"/> </p>
+
+## Performance Analysis
