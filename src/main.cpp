@@ -168,8 +168,8 @@ bool init(int N1, int N2, float* xpoints, float* ypoints) {
 #elif PARALLEL
 	//float m2[12] = { 4.0f,	6.0f, -3.0f, -2.0f,	0.0f,	1.0f, -4.0f,	2.0f,	5.0f, 7.0f,	8.0f,	9.0f, };
 	//cudaMemcpy(ScanMatching::getDevPos() + 3 * N1, m2, 12 * sizeof(float), cudaMemcpyHostToDevice);
-	//ScanMatching::GPU::init(4, ScanMatching::getDevPos() + 3 * N1);
-	ScanMatching::GPU::init(N1, ScanMatching::getDevPos() + 3 * N1);
+	//ScanMatching::GPU::init(4, 4, ScanMatching::getDevPos() + 3 * N1);
+	ScanMatching::GPU::init(N1, N2, ScanMatching::getDevPos() + 3 * N1);
 #endif
 	return true;
 }
@@ -272,7 +272,7 @@ void mainLoop(int N1, int N2, float* xpoints, float* ypoints) {
 	int iter = 0;
 	while (!glfwWindowShouldClose(window)) {
 		std::cout << "\nIter\t" << iter++ << std::endl;
-		if (iter >= 2)
+		if (iter >= 200)
 			break;
 		glfwPollEvents();
 

@@ -80,14 +80,14 @@ namespace ScanMatching {
 			}
 		}
 
-		__global__ void float_to_vec3(int xnum, float* points, glm::vec3* points_vec) {
+		__global__ void float_to_vec3(int ynum, float* points, glm::vec3* points_vec) {
 			int i = (blockIdx.x * blockDim.x) + threadIdx.x;
-			if (i < xnum) {
+			if (i < ynum) {
 				points_vec[i] = glm::vec3(points[3 * i], points[3 * i + 1], points[3 * i + 2]);
 			}
 		}
 
-		void init(int xnum, float* ypoints) {
+		void init(int xnum, int ynum, float* ypoints) {
 			cudaMalloc((void**)&cyp, 3 * xnum * sizeof(float));
 			cudaMalloc((void**)&tcyp, 3 * xnum * sizeof(float));
 			cudaMalloc((void**)&m, 3 * 3 * sizeof(float));
@@ -100,26 +100,26 @@ namespace ScanMatching {
 			cudaMalloc((void**)&T, 3 * sizeof(float));
 			cudaMalloc((void**)&rxmean, 3 * sizeof(float));
 			cudaMalloc((void**)&xr, 3 * xnum * sizeof(float));
-			//cublasCreate(&cublas_handle);
 
 			// Build Tree
-			std::cout << "Building Tree\n";
-			print_kernel << <1, 1 >> > (ypoints, 4);
-			cudaDeviceSynchronize();
-			int size = 1 << ilog2ceil(xnum);
-			cudaMalloc((void**)&tree, size * sizeof(glm::vec4));
-			glm::vec3 *ypoints_vec;
-			cudaMalloc((void**)&ypoints_vec, xnum * sizeof(glm::vec3));
-			dim3 xnumBlocks((xnum + blockSize - 1) / blockSize);
-			float_to_vec3 << <xnumBlocks, blockSize >> > (xnum, ypoints, ypoints_vec);
-			build(tree, ypoints_vec, xnum);
-			cudaFree(ypoints_vec);
-
-			// Print
-			cudaDeviceSynchronize();
-			std::cout << "Built Tree\n";
-			print_v4_kernel << <1, 1 >> > (tree, 8);
-			cudaDeviceSynchronize();
+			#if KDTREE
+				std::cout << "Building Tree\n";
+				print_kernel << <1, 1 >> > (ypoints, 4);
+				cudaDeviceSynchronize();
+				int size = 1 << ilog2ceil(ynum);
+				cudaMalloc((void**)&tree, size * sizeof(glm::vec4));
+				glm::vec3 *ypoints_vec;
+				cudaMalloc((void**)&ypoints_vec, ynum * sizeof(glm::vec3));
+				dim3 ynumBlocks((ynum + blockSize - 1) / blockSize);
+				float_to_vec3 << <ynumBlocks, blockSize >> > (ynum, ypoints, ypoints_vec);
+				buildHost(tree, ypoints_vec, ynum);
+				cudaFree(ypoints_vec);
+				// Print
+				cudaDeviceSynchronize();
+				std::cout << "Built Tree\n";
+				print_v4_kernel << <1, 1 >> > (tree, 5);
+				cudaDeviceSynchronize();
+			#endif
 		}
 
 		__global__ void findCorrespondences(float* xp, float* yp, float* cyp, int xnum, int ynum) {
@@ -233,7 +233,7 @@ namespace ScanMatching {
 			dim3 xnumBlocks((xnum + blockSize - 1) / blockSize);
 			dim3 totalBlocks((3*xnum + blockSize - 1) / blockSize);
 			#if KDTREE
-				
+				find_correspondences(xp, tree, cyp, xnum, ynum, blockSize);
 			#else
 				findCorrespondences << <xnumBlocks, blockSize >> > (xp, yp, cyp, xnum, ynum);
 			#endif
