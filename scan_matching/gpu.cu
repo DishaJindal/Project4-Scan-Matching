@@ -71,7 +71,8 @@ namespace StreamCompaction {
 namespace ScanMatching {
 	namespace GPU {
 
-		float *cyp, *tcyp, *m, *u, *s, *v, *tv, *R, *R1, *T, *rxmean, *xr;
+		float *cyp, *tcyp, *m, *u, *s, *v, *tv, *R, *R1, *T, *rxmean, *xr, *xmc;
+		context *stack;
 		glm::vec4 *tree;
 
 		__global__ void print_kernel2(float* points, int xnum) {
@@ -100,25 +101,28 @@ namespace ScanMatching {
 			cudaMalloc((void**)&T, 3 * sizeof(float));
 			cudaMalloc((void**)&rxmean, 3 * sizeof(float));
 			cudaMalloc((void**)&xr, 3 * xnum * sizeof(float));
+			cudaMalloc((void**)&xmc, 3 * xnum * sizeof(float));
 
 			// Build Tree
 			#if KDTREE
 				std::cout << "Building Tree\n";
-				print_kernel << <1, 1 >> > (ypoints, 4);
-				cudaDeviceSynchronize();
+				//print_kernel << <1, 1 >> > (ypoints, 4);
+				//cudaDeviceSynchronize();
 				int size = 1 << ilog2ceil(ynum);
 				cudaMalloc((void**)&tree, size * sizeof(glm::vec4));
 				glm::vec3 *ypoints_vec;
 				cudaMalloc((void**)&ypoints_vec, ynum * sizeof(glm::vec3));
 				dim3 ynumBlocks((ynum + blockSize - 1) / blockSize);
 				float_to_vec3 << <ynumBlocks, blockSize >> > (ynum, ypoints, ypoints_vec);
-				buildHost(tree, ypoints_vec, ynum);
+				buildHost(tree, ypoints_vec, ynum, size);
 				cudaFree(ypoints_vec);
+				cudaMalloc((void**)&stack, xnum *  ilog2ceil(ynum) * sizeof(context));
+				checkCUDAErrorFn("cudaMalloc stack failed!");
 				// Print
-				cudaDeviceSynchronize();
-				std::cout << "Built Tree\n";
-				print_v4_kernel << <1, 1 >> > (tree, 5);
-				cudaDeviceSynchronize();
+				//cudaDeviceSynchronize();
+				//std::cout << "Built Tree\n";
+				//print_v4_kernel << <1, 1 >> > (tree, 5);
+				//cudaDeviceSynchronize();
 			#endif
 		}
 
@@ -200,7 +204,7 @@ namespace ScanMatching {
 			}
 		}
 
-		void meanCenter(float* xp, float* cyp, int xnum, float *xmean, float *ymean) {
+		void meanCenter(float* xmc, float* xp, float* cyp, int xnum, float *xmean, float *ymean) {
 			float *txp, *tcyp;
 			cudaMalloc((void**)&txp, 3 * xnum * sizeof(float));
 			cudaMalloc((void**)&tcyp, 3 * xnum * sizeof(float));
@@ -215,13 +219,14 @@ namespace ScanMatching {
 			StreamCompaction::sumArray(xnum, ymean + 2, tcyp + 2 * xnum);
 			divide << <1, 3 >> > (xmean, 3, xnum);
 			divide << <1, 3 >> > (ymean, 3, xnum);
-			subtractMean << <fullBlocksPerGrid, blockSize >> > (xp, xmean, xnum);
+			subtractMean << <fullBlocksPerGrid, blockSize >> > (xmc, xmean, xnum);
 			subtractMean << <fullBlocksPerGrid, blockSize >> > (cyp, ymean, xnum);
 			cudaFree(txp);
 			cudaFree(tcyp);
 		}
 
 		void icp(float* xp, float* yp, int xnum, int ynum) {
+			cudaMemcpy(xmc, xp, 3 * xnum * sizeof(float), cudaMemcpyDeviceToDevice);
 			std::cout << "X0\n";
 			print_kernel << <1,1 >> > (xp, 2);
 			cudaDeviceSynchronize();
@@ -233,7 +238,8 @@ namespace ScanMatching {
 			dim3 xnumBlocks((xnum + blockSize - 1) / blockSize);
 			dim3 totalBlocks((3*xnum + blockSize - 1) / blockSize);
 			#if KDTREE
-				find_correspondences(xp, tree, cyp, xnum, ynum, blockSize);
+				find_correspondences(xp, tree, cyp, xnum, ynum, blockSize, stack);
+				checkCUDAErrorFn("find_correspondences calculation failed!");
 			#else
 				findCorrespondences << <xnumBlocks, blockSize >> > (xp, yp, cyp, xnum, ynum);
 			#endif
@@ -247,7 +253,7 @@ namespace ScanMatching {
 			cudaMalloc((void**)&ymean, 3 * sizeof(float));
 			cudaMemset(xmean, 0.0f, 3);
 			cudaMemset(ymean, 0.0f, 3);
-			meanCenter(xp, cyp, xnum, xmean, ymean);
+			meanCenter(xmc, xp, cyp, xnum, xmean, ymean);
 			cudaDeviceSynchronize();
 			print_kernel << <1, 1 >> > (xmean, 1);
 			cudaDeviceSynchronize();
@@ -258,7 +264,7 @@ namespace ScanMatching {
 			transpose << <totalBlocks, blockSize >> > (cyp, tcyp, xnum, 3);
 
 			std::cout << "Calculating Yt,X\n";
-			matrix_multiplication << <1, 9 >> > (tcyp, xp, m, 3, xnum, 3);
+			matrix_multiplication << <1, 9 >> > (tcyp, xmc, m, 3, xnum, 3);
 
 			std::cout << "Input\n";
 			print_kernel<<<1,1>>>(m, 3);
