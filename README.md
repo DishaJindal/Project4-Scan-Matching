@@ -40,8 +40,7 @@ This project implements Iterative Closest Point Algorithm for scan matching. Fol
    - [x] Performance Analysis
 
 ## Implementations
- This section talks in detail about the three different implementations of the ICP algorithm. There are following flags in the `main.cpp` file to control the current implementation (default is set to the most optimal KDTree based GPU implementation).
-  **Flags**:
+ This section talks in detail about the three different implementations of the ICP algorithm. There are following flags in the `main.cpp` file to control the current implementation (default is set to the most optimal KDTree based GPU implementation):
   ```
     #define NAIVE 0
     #define NAIVE_GPU 0
