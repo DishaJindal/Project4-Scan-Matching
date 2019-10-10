@@ -51,18 +51,8 @@ void checkCUDAError(const char *msg, int line = -1) {
 int numObjects;
 dim3 threadsPerBlock(blockSize);
 
-// LOOK-1.2 - These buffers are here to hold all your boid information.
-// These get allocated for you in ScanMatching::initSimulation.
-// Consider why you would need two velocity buffers in a simulation where each
-// boid cares about its neighbors' velocities.
-// These are called ping-pong buffers.
 float *dev_pos;
 float *dev_color;
-int gridCellCount;
-int gridSideCount;
-float gridCellWidth;
-float gridInverseCellWidth;
-glm::vec3 gridMinimum;
 
 /******************
 * initSimulation *
@@ -105,17 +95,17 @@ __global__ void kernGenerateRandomPosArray(int time, int N, glm::vec3 * arr, flo
 __global__ void kernAddColor(float* dev_color, int N) {
 	int i = (blockIdx.x * blockDim.x) + threadIdx.x;
 	if (i < N) {
-		dev_color[3 * i] = 1.0f;;
-		dev_color[3 * i + 1] = 0.0f;
-		dev_color[3 * i + 2] = 0.0f;
+		dev_color[3 * i] = 0.9f;;
+		dev_color[3 * i + 1] = 1.0f;
+		dev_color[3 * i + 2] = 0.3f;
 	}
 }
 
 __global__ void kernAddColor2(float* dev_color, int N1, int N2) {
 	int i = (blockIdx.x * blockDim.x) + threadIdx.x;
 	if (i < N2) {
-		dev_color[3 * N1 + 3 * i] = 0.0f;;
-		dev_color[3 * N1 + 3 * i + 1] = 1.0f;
+		dev_color[3 * N1 + 3 * i] = 1.0f;;
+		dev_color[3 * N1 + 3 * i + 1] = 0.2f;
 		dev_color[3 * N1 + 3 * i + 2] = 0.0f;
 	}
 }
@@ -143,17 +133,6 @@ void ScanMatching::initSimulation(int N1, int N2, float* xpoints, float* ypoints
   kernAddColor << <fullBlocksPerGrid1, blockSize >> > (dev_color, N1);
   dim3 fullBlocksPerGrid2((N2 + blockSize - 1) / blockSize);
   kernAddColor2 << <fullBlocksPerGrid2, blockSize >> > (dev_color, N1, N2);
-
-  gridCellWidth = 2.0f;
-  int halfSideCount = (int)(scene_scale / gridCellWidth) + 1;
-  gridSideCount = 2 * halfSideCount;
-
-  gridCellCount = gridSideCount * gridSideCount * gridSideCount;
-  gridInverseCellWidth = 1.0f / gridCellWidth;
-  float halfGridWidth = gridCellWidth * halfSideCount;
-  gridMinimum.x -= halfGridWidth;
-  gridMinimum.y -= halfGridWidth;
-  gridMinimum.z -= halfGridWidth;
   cudaDeviceSynchronize();
 }
 

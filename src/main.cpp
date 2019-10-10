@@ -10,8 +10,9 @@
 #include <string.h>
 #include <sstream>
 #include <iomanip>
-
-
+#include "glm/glm.hpp"
+#include <thread>
+#include <chrono>
 // ================
 // Configuration
 // ================
@@ -26,6 +27,65 @@ float *ypoints;
 glm::vec3 *dev_pos;
 
 const float DT = 0.2f;
+
+glm::vec3 translate1(1.0f, 0.1f, 0.8f);
+glm::vec3 rotation1(0.0f, 0.5f, -0.2f);
+glm::vec3 scale1(1.5f, 1.5f, 1.5f);
+glm::mat4 transformation_mat1 = utilityCore::buildTransformationMatrix(translate1, rotation1, scale1);
+
+glm::vec3 translate2(0.0f, 0.3f, 0.2f);
+glm::vec3 rotation2(-1.0f, 0.1f, 0.3f);
+glm::vec3 scale2(1.5f, 1.5f, 1.5f);
+glm::mat4 transformation_mat2 = utilityCore::buildTransformationMatrix(translate2, rotation2, scale2);
+
+void read_points_w_trans(std::string plyfile, int* num_points1 , int* num_points2) {
+	std::ifstream myfile(plyfile);
+	float *points;
+	if (!myfile.is_open())
+	{
+		std::cout << "Error opening file: " << plyfile;
+		exit(1);
+	}
+	std::string myString;
+
+	if (!myfile.eof())
+	{
+		do {
+			getline(myfile, myString);
+			if (!myString.compare(0, 14, "element vertex")) {
+				std::istringstream ss(myString);
+				int count = 0;
+				do {
+					std::string temp;
+					ss >> temp;
+					if (count == 2) {
+						*num_points1 = std::stoi(temp);
+						*num_points2 = std::stoi(temp);
+						printf("Points: %d\n", *num_points1);
+					}
+				} while (count++ < 2);
+			}
+		} while (myString != "end_header");
+
+		xpoints = (float*)malloc(3 * (*num_points1) * sizeof(float));
+		ypoints = (float*)malloc(3 * (*num_points1) * sizeof(float));
+		int i = 0;
+		while (i < *num_points1) {
+			glm::vec3 pt;
+			getline(myfile, myString);
+			std::istringstream ss(myString);
+			ss >> pt.x >> pt.y >> pt.z;
+			xpoints[3 * i] = glm::vec3(transformation_mat1 * glm::vec4(pt, 1)).x;
+			xpoints[3 * i + 1] = glm::vec3(transformation_mat1 * glm::vec4(pt, 1)).y;
+			xpoints[3 * i + 2] = glm::vec3(transformation_mat1 * glm::vec4(pt, 1)).z;
+			ypoints[3 * i] = glm::vec3(transformation_mat2 * glm::vec4(pt, 1)).x;
+			ypoints[3 * i + 1] = glm::vec3(transformation_mat2 * glm::vec4(pt, 1)).y;
+			ypoints[3 * i + 2] = glm::vec3(transformation_mat2 * glm::vec4(pt, 1)).z;
+			i++;
+		}
+	}
+	std::cout << "Done Reading: " << plyfile << "\n";
+}
 
 float* readPointCloudPly(std::string plyfile, int* num_points) {
 	std::ifstream myfile(plyfile);
@@ -69,10 +129,9 @@ float* readPointCloudPly(std::string plyfile, int* num_points) {
 * C main function.
 */
 int main(int argc, char* argv[]) {
-	projectName = "Scan Matching";
-	xpoints = readPointCloudPly("C:\\Users\\djjindal\\Project4-Scan-Matching\\data\\bunny\\data\\bun045.ply", &N1);
-	ypoints = readPointCloudPly("C:\\Users\\djjindal\\Project4-Scan-Matching\\data\\bunny\\data\\bun000.ply", &N2);
-	
+	projectName = "Scan Matching";	
+	 read_points_w_trans("../data/dragon_stand/dragonStandRight_0.ply", &N1, &N2);
+	// read_points_w_trans("../data/bunny/data/bun045.ply", &N1, &N2);
 	if (init(N1, N2, xpoints, ypoints)) {
 		mainLoop(N1, N2, xpoints, ypoints);
 		ScanMatching::endSimulation();
@@ -166,9 +225,6 @@ bool init(int N1, int N2, float* xpoints, float* ypoints) {
 #if NAIVE
 	ScanMatching::CPU::init(N1);
 #elif NAIVE_GPU
-	//float m2[12] = { 4.0f,	6.0f, -3.0f, -2.0f,	0.0f,	1.0f, -4.0f,	2.0f,	5.0f, 7.0f,	8.0f,	9.0f, };
-	//cudaMemcpy(ScanMatching::getDevPos() + 3 * N1, m2, 12 * sizeof(float), cudaMemcpyHostToDevice);
-	//ScanMatching::GPU::init(4, 4, ScanMatching::getDevPos() + 3 * N1);
 	ScanMatching::GPU::init(N1, N2, ScanMatching::getDevPos() + 3 * N1);
 #endif
 	return true;
@@ -271,8 +327,10 @@ void mainLoop(int N1, int N2, float* xpoints, float* ypoints) {
 	int frame = 0;
 	int iter = 0;
 	while (!glfwWindowShouldClose(window)) {
-		if (iter++ >= 50)
+		if (iter++ >= 500)
 			break;
+		if(iter==2)
+			std::this_thread::sleep_for(std::chrono::milliseconds(3000));
 		glfwPollEvents();
 
 		frame++;

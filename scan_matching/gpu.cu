@@ -264,7 +264,7 @@ namespace ScanMatching {
 			cudaDeviceSynchronize();
 			auto finish = std::chrono::high_resolution_clock::now();
 			std::chrono::duration<double> elapsed = finish - start;
-			std::cout << elapsed.count() << "\n";
+			//std::cout << elapsed.count() * 1000 << "\n";
 		}
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
