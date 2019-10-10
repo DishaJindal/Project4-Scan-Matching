@@ -56,7 +56,7 @@ In this version, the nearest neighbour search for each point happens parallely b
 ### KD-Tree 
 In the above two implementations, we are looking at all the points in the target pointcloud to find the correspondence for each source point which clearly is very inefficient. The idea behind using KD-Tree is to limit this search space. A k-d tree is a space-partitioning data structure for organizing points in a k-dimensional space. All of the points in our dataset are three dimensional, so we have built a 3 dimensional tree and divided the search space something like this:
 
-<p align="center"><img src="https://github.com/DishaJindal/Project4-Scan-Matching/blob/submission/img/3dtree.png" width="300"/> </p>
+<p align="center"><img src="https://github.com/DishaJindal/Project4-Scan-Matching/blob/working/img/3dtree.png" width="300"/> </p>
 
 In KD Tree, we divide the two paths from each node into a good or bad path by comparing the plane with the query point's coordinate. The key idea behind KD Tree is to first traverse the best path which helps in efficient pruning of the bad paths. For implementation, the tree is represented in the form of an array where the children of a node at `i` are stored at `2 * i + 1` and `2 * i + 2`, and the parent of that node is present at `i/2`. The nearest neighbour search is implemented by using an array as a stack, corresponding push and pop fucntions are implemented and top variable is maintained to keep track of the states. 
 
