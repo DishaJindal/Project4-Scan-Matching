@@ -271,8 +271,7 @@ void mainLoop(int N1, int N2, float* xpoints, float* ypoints) {
 	int frame = 0;
 	int iter = 0;
 	while (!glfwWindowShouldClose(window)) {
-		std::cout << "\nIter\t" << iter++ << std::endl;
-		if (iter >= 2000)
+		if (iter++ >= 50)
 			break;
 		glfwPollEvents();
 

@@ -106,8 +106,6 @@ namespace ScanMatching {
 			// Build Tree
 			#if KDTREE
 				std::cout << "Building Tree\n";
-				//print_kernel << <1, 1 >> > (ypoints, 4);
-				//cudaDeviceSynchronize();
 				int size = 1 << ilog2ceil(ynum);
 				cudaMalloc((void**)&tree, size * sizeof(glm::vec4));
 				glm::vec3 *ypoints_vec;
@@ -115,17 +113,9 @@ namespace ScanMatching {
 				dim3 ynumBlocks((ynum + blockSize - 1) / blockSize);
 				float_to_vec3 << <ynumBlocks, blockSize >> > (ynum, ypoints, ypoints_vec);
 				buildHost(tree, ypoints_vec, ynum, size);
-				print_v4_kernel << <1, 1 >> > (tree, 2);
-				cudaDeviceSynchronize();
-
 				cudaFree(ypoints_vec);
 				cudaMalloc((void**)&stack, xnum *  (ilog2ceil(ynum) + 1) * sizeof(context));
 				checkCUDAErrorFn("cudaMalloc stack failed!");
-				// Print
-				//cudaDeviceSynchronize();
-				//std::cout << "Built Tree\n";
-				//print_v4_kernel << <1, 1 >> > (tree, 5);
-				//cudaDeviceSynchronize();
 			#endif
 		}
 
@@ -229,15 +219,8 @@ namespace ScanMatching {
 		}
 
 		void icp(float* xp, float* yp, int xnum, int ynum) {
+			auto start = std::chrono::high_resolution_clock::now();
 			cudaMemcpy(xmc, xp, 3 * xnum * sizeof(float), cudaMemcpyDeviceToDevice);
-			std::cout << "X0\n";
-			print_kernel << <1,1 >> > (xp, 2);
-			cudaDeviceSynchronize();
-			std::cout << "Y0\n";
-			print_kernel << <1, 1 >> > (yp, 5);
-			cudaDeviceSynchronize();
-
-			std::cout << "Finding Correspondences..\n";
 			dim3 xnumBlocks((xnum + blockSize - 1) / blockSize);
 			dim3 totalBlocks((3*xnum + blockSize - 1) / blockSize);
 			#if KDTREE
@@ -246,70 +229,42 @@ namespace ScanMatching {
 			#else
 				findCorrespondences << <xnumBlocks, blockSize >> > (xp, yp, cyp, xnum, ynum);
 			#endif
-			std::cout << "Y Corr\n"; 
-			print_kernel << <1, 1 >> > (cyp, 2);
-			cudaDeviceSynchronize();
 
-			std::cout << "Mean Centering\n";
+			//std::cout << "Mean Centering\n";
 			float *xmean, *ymean;
 			cudaMalloc((void**)&xmean, 3 * sizeof(float));
 			cudaMalloc((void**)&ymean, 3 * sizeof(float));
 			cudaMemset(xmean, 0.0f, 3);
 			cudaMemset(ymean, 0.0f, 3);
 			meanCenter(xmc, xp, cyp, xnum, xmean, ymean);
-			cudaDeviceSynchronize();
-			print_kernel << <1, 1 >> > (xmean, 1);
-			cudaDeviceSynchronize();
-			print_kernel << <1, 1 >> > (ymean, 1);
-			cudaDeviceSynchronize();
-
-			std::cout << "Transposing correspondences\n";
+			
+			//std::cout << "SVD\n";
 			transpose << <totalBlocks, blockSize >> > (cyp, tcyp, xnum, 3);
-
-			std::cout << "Mean Centered X\n";
-			print_kernel << <1, 1 >> > (xmc, 3);
-			cudaDeviceSynchronize();
-			std::cout << "Calculating Yt,X\n";
 			matrix_multiplication << <1, 9 >> > (tcyp, xmc, m, 3, xnum, 3);
-
-			std::cout << "Input\n";
-			print_kernel<<<1,1>>>(m, 3);
-			cudaDeviceSynchronize();
-			std::cout << "SVD\n";
 			cudaMemset(u, 0.0f, 9);
 			cudaMemset(s, 0.0f, 9);
 			cudaMemset(v, 0.0f, 9);
 			callSVD << <1, 1 >> > (m, u, s, v);
-			cudaDeviceSynchronize();
-			std::cout << "U\n";
-			print_kernel << <1, 1 >> > (u, 3);
-			cudaDeviceSynchronize();
-			std::cout << "V\n";
-			print_kernel << <1, 1 >> > (v, 3);
-			cudaDeviceSynchronize();
 
-			std::cout << "Calculating R\n";
+			//std::cout << "Calculating R\n";
 			transpose<<<1, 9>>>(v, tv, 3, 3);
 			matrix_multiplication << <1, 9 >> > (u, tv, R, 3, 3, 3);
-			print_kernel << <1, 1 >> > (R, 3);
-			cudaDeviceSynchronize();
 
-			std::cout << "Calculating T\n";
+			//std::cout << "Calculating T\n";
 			matrix_multiplication << <1, 3 >> > (R, xmean, rxmean, 3, 3, 1);
 			subtract << <1, 3 >> > (ymean, rxmean, 3, T);
-			print_kernel << <1, 1 >> > (T, 1);
-			cudaDeviceSynchronize();
 
-			std::cout << "Updating Positions\n";
+			//std::cout << "Updating Positions\n";
 			float *tR;
 			cudaMalloc((void**)&tR, 9 * sizeof(float));
 			transpose << <1, 9 >> > (R, tR, 3, 3);
 			matrix_multiplication << <totalBlocks, blockSize >> > (xp, tR, xr, xnum, 3, 3);
 			add_translation<<< xnumBlocks, blockSize>>>(xp, xr, T, xnum);
-			print_kernel << <1, 1 >> > (xp, 2);
+
 			cudaDeviceSynchronize();
-			std::cout << "End of this iteration\n";
-			cudaDeviceSynchronize();
+			auto finish = std::chrono::high_resolution_clock::now();
+			std::chrono::duration<double> elapsed = finish - start;
+			std::cout << elapsed.count() << "\n";
 		}
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////

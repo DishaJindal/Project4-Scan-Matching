@@ -186,9 +186,6 @@ namespace ScanMatching {
 					}
 				}
 			}
-			if (idx == 0) {
-				printf("After While ran %d\n", counter);
-			}
 		}
 
 		// Kernel to find correspondence of one point in xp and update in cyp

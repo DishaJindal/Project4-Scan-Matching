@@ -4,10 +4,11 @@
 #include "glm/glm.hpp"
 #include "svd3.h"
 #include <iostream>
+#include <stdio.h>
 
 namespace ScanMatching {
 	namespace CPU {
-		float *cyp, *tcyp, *m, *u, *s, *v, *tv, *R, *R1, *T, *rxmean, *xr;
+		float *cyp, *tcyp, *m, *u, *s, *v, *tv, *R, *R1, *T, *rxmean, *xr, *xm;
 		void print(float* points, int num) {
 			for (int i = 0; i <= 3 * num - 3; i += 3) {
 				std::cout << points[i] << "\t" << points[i + 1] << "\t" << points[i + 2] << "\n";
@@ -29,7 +30,7 @@ namespace ScanMatching {
 			}
 		}
 
-		float* meanCenter(float* points, int num_points) {
+		float* meanCenter(float* points_mean, float* points, int num_points) {
 			float* mean = new float[3];
 			mean[0] = 0.0f;
 			mean[1] = 0.0f;
@@ -43,9 +44,9 @@ namespace ScanMatching {
 			mean[1] /= num_points;
 			mean[2] /= num_points;
 			for (int i = 0; i < num_points; i++) {
-				points[3 * i] -= mean[0];
-				points[3 * i + 1] -= mean[1];
-				points[3 * i + 2] -= mean[2];
+				points_mean[3 * i] = points[3 * i] - mean[0];
+				points_mean[3 * i + 1] = points[3 * i + 1] - mean[1];
+				points_mean[3 * i + 2] = points[3 * i + 2] - mean[2];
 			}
 			return mean;
 		}
@@ -102,6 +103,7 @@ namespace ScanMatching {
 			T = (float*)malloc(3 * sizeof(float));
 			rxmean = (float*)malloc(3 * sizeof(float));
 			xr = (float*)malloc(3 * xnum * sizeof(float));
+			xm = (float*)malloc(3 * xnum * sizeof(float));
 		}
 
 		void clean() {
@@ -127,67 +129,40 @@ namespace ScanMatching {
 		}
 
 		void icp(float* xp, float* yp, int xnum, int ynum) {
-				std::cout << "X0\n";
-				print(xp, 2);
-				std::cout << "y0\n";
-				print(yp, 5);
+			auto start = std::chrono::high_resolution_clock::now();
+			//std::cout << "Finding Correspondences..\n";
+			findCorrespondences(xp, yp, cyp, xnum, ynum);
 
-				std::cout << "Finding Correspondences..\n";
-				findCorrespondences(xp, yp, cyp, xnum, ynum);
+			//std::cout << "Mean Centering\n";
+			float* xmean = meanCenter(xm, xp, xnum);
+			float* ymean = meanCenter(cyp, cyp, xnum);
 
-				std::cout << "Y Corr\n";
-				print(cyp, 5);
-					
-				std::cout << "Mean Centering\n";
-				float* xmean = meanCenter(xp, xnum);
-				print(xp, 1);
-				std::cout << "X Mean\n";
-				print(xmean, 1);
-				float* ymean = meanCenter(cyp, xnum);
-				std::cout << "Y Mean\n";
-				print(ymean, 1);
-					
-				std::cout << "Transposing correspondences\n";
-				transpose(cyp, xnum, 3, tcyp);
-					
-				std::cout << "Calculating X.Yt\n";
-				matrix_multiplication(tcyp, xp, m, 3, xnum, 3);
+			//std::cout << "SVD\n";
+			transpose(cyp, xnum, 3, tcyp);
+			matrix_multiplication(tcyp, xp, m, 3, xnum, 3);
+			initialize_zero(u, 9);
+			initialize_zero(s, 9);
+			initialize_zero(v, 9);
+			svd(m[0], m[1], m[2], m[3], m[4], m[5], m[6], m[7], m[8],
+				u[0], u[1], u[2], u[3], u[4], u[5], u[6], u[7], u[8],
+				s[0], s[1], s[2], s[3], s[4], s[5], s[6], s[7], s[8],
+				v[0], v[1], v[2], v[3], v[4], v[5], v[6], v[7], v[8]);
 
-				std::cout << "Input\n";
-				print(m, 3);
-				std::cout << "SVD\n";
-				initialize_zero(u, 9);
-				initialize_zero(s, 9);
-				initialize_zero(v, 9);
-				svd(m[0], m[1], m[2], m[3], m[4], m[5], m[6], m[7], m[8],
-					u[0], u[1], u[2], u[3], u[4], u[5], u[6], u[7], u[8],
-					s[0], s[1], s[2], s[3], s[4], s[5], s[6], s[7], s[8],
-					v[0], v[1], v[2], v[3], v[4], v[5], v[6], v[7], v[8]);
-				std::cout << "U\n";
-				print(u, 3);
-				std::cout << "V\n";
-				print(v, 3);
+			//std::cout << "Calculating R\n";
+			transpose(v, 3, 3, tv);
+			matrix_multiplication(u, tv, R, 3, 3, 3);
 
-				std::cout << "Calculating R\n";
-				transpose(v, 3, 3, tv);
-				
-				matrix_multiplication(u, tv, R, 3, 3, 3);
-				print(R, 3);
+			//std::cout << "Calculating T\n";
+			matrix_multiplication(R, xmean, rxmean, 3, 3, 1);
+			subtract(ymean, rxmean, 3, T);
 
-				std::cout << "Calculating T\n";
-				matrix_multiplication(R, xmean, rxmean, 3, 3, 1);
-				subtract(ymean, rxmean, 3, T);
-				print(T, 1);
-
-				std::cout << "Updating Positions\n";
-				transpose(R, 3, 3, R1);
-				matrix_multiplication(xp, R1, xr, xnum, 3, 3); /////// Change R to R Transpose
-				std::cout << "xr\n";
-				print(xp, 1);
-				print(xr, 1);
-				add_translation(xp, xr, T, xnum);
-				print(xp, 2);
+			//std::cout << "Updating Positions\n";
+			transpose(R, 3, 3, R1);
+			matrix_multiplication(xp, R1, xr, xnum, 3, 3); /////// Change R to R Transpose
+			add_translation(xp, xr, T, xnum);
+			auto finish = std::chrono::high_resolution_clock::now();
+			std::chrono::duration<double> elapsed = finish - start;
+			std::cout << elapsed.count() << "\n";
 		}
-
 	}
 }
