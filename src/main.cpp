@@ -17,7 +17,7 @@
 // ================
 #define VISUALIZE 1
 #define NAIVE 0
-#define PARALLEL 1
+#define NAIVE_GPU 1
 
 int N1;
 int N2;
@@ -165,7 +165,7 @@ bool init(int N1, int N2, float* xpoints, float* ypoints) {
 
 #if NAIVE
 	ScanMatching::CPU::init(N1);
-#elif PARALLEL
+#elif NAIVE_GPU
 	//float m2[12] = { 4.0f,	6.0f, -3.0f, -2.0f,	0.0f,	1.0f, -4.0f,	2.0f,	5.0f, 7.0f,	8.0f,	9.0f, };
 	//cudaMemcpy(ScanMatching::getDevPos() + 3 * N1, m2, 12 * sizeof(float), cudaMemcpyHostToDevice);
 	//ScanMatching::GPU::init(4, 4, ScanMatching::getDevPos() + 3 * N1);
@@ -253,7 +253,7 @@ void runCUDA(int N1, int N2, float* xpoints, float* ypoints) {
 #if NAIVE
 	ScanMatching::CPU::icp(xpoints, ypoints, N1, N2);
 	ScanMatching::copyToDevice(N1, N2, xpoints, ypoints);
-#elif PARALLEL
+#elif NAIVE_GPU
 	ScanMatching::GPU::icp(ScanMatching::getDevPos(), ScanMatching::getDevPos() + 3 * N1, N1, N2);
 #endif
 
