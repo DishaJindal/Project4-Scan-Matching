@@ -70,9 +70,9 @@ The following plot shows a zoomed in version of the two merged GPU lines from th
 As mentioned above, the number of KD Tree nodes traversed vary in each iteration. If we start our traversal with a very good path, it leads to more pruning and hence, faster nearest neighbour search. Whereas, if the the first path is not great, we might have to go through a lot of bad paths since we are not confident that they can not have the nearest neighbour. Following graph shows the number of KD Tree nodes checked in each iteration of one source point. The drop in the number of nodes checked also helps in explaining the drop in each iteration's time in the graph above. 
 <p align="center"><img src="https://github.com/DishaJindal/Project4-Scan-Matching/blob/working/img/kdtree_nodes.PNG"></p>
 
-## Additional Ouputs
-**Dragon**
-<p align="center"><img src="https://github.com/DishaJindal/Project4-Scan-Matching/blob/working/img/dragon1.gif"></p>
+## Dragon
+<p align="center"><img src="https://github.com/DishaJindal/Project4-Scan-Matching/blob/working/img/dragon1.gif" width="350"/> 
+ <img src="https://github.com/DishaJindal/Project4-Scan-Matching/blob/working/img/dragon3.gif" width="350"/></p>
 
 ## Bloopers
 We need to mean center the source points as well as the correspondences to calculate SVD. But, we also need the actual points to do the delta position updates. I introduced a bug by doing the inplace mean centering and updated the actual points and got the following.
