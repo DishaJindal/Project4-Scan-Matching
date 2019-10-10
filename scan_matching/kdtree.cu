@@ -49,25 +49,6 @@ namespace ScanMatching {
 			}
 		};
 
-		__device__ void buildTree(glm::vec4 *tree, glm::vec3 *points, int dim, int idx, int s, int e) {
-			printf("In Tree: idx: %d dim: %d, s: %d e: %d\n", idx, dim, s, e);
-			print_k(points, 2);
-			if (s > e)
-				return;
-			if (dim == 0)
-				thrust::sort(thrust::device, points + s, points + e, XComparator());
-			if (dim == 1)
-				thrust::sort(thrust::device, points + s, points + e, YComparator());
-			if (dim == 2)
-				thrust::sort(thrust::device, points + s, points + e, ZComparator());
-			int mid = (s + e) / 2;
-			tree[idx] = glm::vec4(points[mid].x, points[mid].y, points[mid].z, 1.0f);
-			buildTree(tree, points, (dim + 1) % 3, 2 * idx + 1, s, mid - 1);
-			buildTree(tree, points, (dim + 1) % 3, 2 * idx + 2, mid + 1, e);
-			printf("Out Tree\n");
-			print_k(points, 2);
-		}
-
 		__host__ void buildTreeH(glm::vec4 *tree, glm::vec3 *points, int dim, int idx, int s, int e) {
 			if (s > e)
 				return;
@@ -83,17 +64,8 @@ namespace ScanMatching {
 			buildTreeH(tree, points, (dim + 1) % 3, 2 * idx + 2, mid + 1, e);
 		}
 
-		__global__ void kernel_build_tree(glm::vec4* tree, glm::vec3* ypoints_vec, int ynum) {
-			buildTree(tree, ypoints_vec, 0, 0, 0, ynum - 1);
-		}
-
 		// Builds KD Tree
-		void build(glm::vec4 *tree, glm::vec3 *points, int xnum) {
-			kernel_build_tree << <1, 1 >> > (tree, points, xnum);
-		}
-
-		// Builds KD Tree
-		void buildHost(glm::vec4 *tree, glm::vec3 *points, int ynum, int size) {
+		void build_KDTree(glm::vec4 *tree, glm::vec3 *points, int ynum, int size) {
 			glm::vec4 *treeH = new glm::vec4[ynum];
 			glm::vec3 *pointsH = new glm::vec3[ynum]; 
 			cudaMemcpy(pointsH, points, ynum * sizeof(glm::vec3), cudaMemcpyDeviceToHost);
@@ -147,7 +119,7 @@ namespace ScanMatching {
 						(*nn).y = root_node.y;
 						(*nn).z = root_node.z;
 					}
-					// Prune
+					// Check If we need to prune the bad path
 					if (!popped_context.good && potential_best_dist(glm::vec3(tree[popped_context.idx/2]), popped_context.dim, query) > nn_dist) {
 						continue;
 					}
@@ -170,6 +142,7 @@ namespace ScanMatching {
 						good_idx = (root_node.z <= query.z) ? right : left;
 						bad_idx = (root_node.z > query.z) ? right : left;
 					}
+					// Push the bad path first, if valid
 					if (bad_idx != -1 && bad_idx < size && tree[bad_idx].w >= 0.5) {
 						context bad_context;
 						bad_context.dim = (popped_context.dim + 1) % 3;
@@ -177,6 +150,7 @@ namespace ScanMatching {
 						bad_context.idx = bad_idx;
 						push(context_stack, &top, bad_context);
 					}
+					// Push the good path, if valid
 					if (good_idx != -1 && good_idx < size && tree[good_idx].w >= 0.5) {
 						context good_context;
 						good_context.dim = (popped_context.dim + 1) % 3;
@@ -185,9 +159,6 @@ namespace ScanMatching {
 						push(context_stack, &top, good_context);
 					}
 				}
-			}
-			if (idx == 0) {
-				printf("After While ran %d\n", counter);
 			}
 		}
 

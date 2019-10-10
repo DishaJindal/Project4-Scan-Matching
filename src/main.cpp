@@ -11,12 +11,11 @@
 #include <sstream>
 #include <iomanip>
 
-
 // ================
 // Configuration
 // ================
 #define VISUALIZE 1
-#define NAIVE 0
+#define NAIVE 1
 #define PARALLEL 1
 
 int N1;
@@ -271,8 +270,8 @@ void mainLoop(int N1, int N2, float* xpoints, float* ypoints) {
 	int frame = 0;
 	int iter = 0;
 	while (!glfwWindowShouldClose(window)) {
-		std::cout << "\nIter\t" << iter++ << std::endl;
-		if (iter >= 2000)
+		//std::cout << "Iter\t" << iter++ << std::endl;
+		if (iter++ >= 50)
 			break;
 		glfwPollEvents();
 
