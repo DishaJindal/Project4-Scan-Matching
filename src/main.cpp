@@ -329,8 +329,8 @@ void mainLoop(int N1, int N2, float* xpoints, float* ypoints) {
 	while (!glfwWindowShouldClose(window)) {
 		if (iter++ >= 500)
 			break;
-		if(iter==2)
-			std::this_thread::sleep_for(std::chrono::milliseconds(3000));
+		//if(iter==2)
+		//	std::this_thread::sleep_for(std::chrono::milliseconds(3000));
 		glfwPollEvents();
 
 		frame++;
