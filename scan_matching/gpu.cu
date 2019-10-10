@@ -115,8 +115,11 @@ namespace ScanMatching {
 				dim3 ynumBlocks((ynum + blockSize - 1) / blockSize);
 				float_to_vec3 << <ynumBlocks, blockSize >> > (ynum, ypoints, ypoints_vec);
 				buildHost(tree, ypoints_vec, ynum, size);
+				print_v4_kernel << <1, 1 >> > (tree, 2);
+				cudaDeviceSynchronize();
+
 				cudaFree(ypoints_vec);
-				cudaMalloc((void**)&stack, xnum *  ilog2ceil(ynum) * sizeof(context));
+				cudaMalloc((void**)&stack, xnum *  (ilog2ceil(ynum) + 1) * sizeof(context));
 				checkCUDAErrorFn("cudaMalloc stack failed!");
 				// Print
 				//cudaDeviceSynchronize();
@@ -244,7 +247,7 @@ namespace ScanMatching {
 				findCorrespondences << <xnumBlocks, blockSize >> > (xp, yp, cyp, xnum, ynum);
 			#endif
 			std::cout << "Y Corr\n"; 
-			print_kernel << <1, 1 >> > (cyp, 5);
+			print_kernel << <1, 1 >> > (cyp, 2);
 			cudaDeviceSynchronize();
 
 			std::cout << "Mean Centering\n";
@@ -263,6 +266,9 @@ namespace ScanMatching {
 			std::cout << "Transposing correspondences\n";
 			transpose << <totalBlocks, blockSize >> > (cyp, tcyp, xnum, 3);
 
+			std::cout << "Mean Centered X\n";
+			print_kernel << <1, 1 >> > (xmc, 3);
+			cudaDeviceSynchronize();
 			std::cout << "Calculating Yt,X\n";
 			matrix_multiplication << <1, 9 >> > (tcyp, xmc, m, 3, xnum, 3);
 
