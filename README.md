@@ -1,23 +1,33 @@
 CUDA Scan Matching
 ======================
 
-**University of Pennsylvania, CIS 565: GPU Programming and Architecture, Project 2**
+**University of Pennsylvania, CIS 565: GPU Programming and Architecture, Project 4**
 
 * Disha Jindal: [Linkedin](https://www.linkedin.com/in/disha-jindal/)
 * Tested on: Windows 10 Education, Intel(R) Core(TM) i7-6700 CPU @ 3.40GHz 16GB, NVIDIA Quadro P1000 @ 4GB (Moore 100B Lab)
 
 ## Scan Matching
-The main objective of scan matching is to search a transformation that would align a point cloud with a reference point cloud in a consistent coordinate system. If the correspondences between two point clouds are known, that the rotation and translation matrices can be calculated in closed form. Since, we do not know the correspondences, we are using this iterative ICP algorithm to find the rotation and translation matrices which converges if the starting points are close enough. 
+The main objective of scan matching is to search a transformation that would align a point cloud with a reference point cloud in a consistent coordinate system. If the correspondences between two point clouds are known, that the rotation and translation matrices can be calculated in closed form. Since, we do not know the correspondences, we are using an iterative ICP algorithm to find the rotation and translation matrices. This algorithm converges if the starting points are close enough. 
 <p align="center"><img src="https://github.com/DishaJindal/Project4-Scan-Matching/blob/working/img/bunny1.gif"></p>
 
+## Features
+   - [x] CPU Implementation of scan matching
+   - [x] Naive GPU Implementation of scan matching
+   - [x] KD-Tree GPU Implementation of scan matching
+   - [x] Performance Analysis
+
 ## Iterative Closest Point Search
-This project implements Iterative Closest Point Algorithm for scan matching. Following are the main steps of the algorithm:
+This project implements Iterative Closest Point Algorithm for scan matching. Once we have the correspondences between two points clouds, it is similar to [Orthogonal Procrustes Problem](https://en.wikipedia.org/wiki/Orthogonal_Procrustes_problem) which states that given two matrices A and B, the task is to find an orthogonal matrix R which most closely maps the two matrices. Following is an excerpt from the page:
+<p align="center"><img src="https://github.com/DishaJindal/Project4-Scan-Matching/blob/master/img/procrusters_proof.png"></p>
+
+**Main steps of the algorithm**
  - Find correspondences between two point clouds 
  - Mean center both matrices and apply SVD
  - Compute rotation R and translation T
  - Apply R and T to get the updated positions
  - Compute error and If it is greater than a threshold, repeat the above steps
  - Else stop and output final alignment
+ 
 
 ### Contents
 * `data/` Point cloud data of different objects in .ply format
@@ -34,11 +44,6 @@ This project implements Iterative Closest Point Algorithm for scan matching. Fol
   - `utilityCore.cpp`: Collection/kitchen sink of generally useful functions
   - `glslUtility.cpp`: Utility namespace for loading GLSL shaders
   
-## Features
-   - [x] CPU Implementation of scan matching
-   - [x] Naive GPU Implementation of scan matching
-   - [x] KD-Tree GPU Implementation of scan matching
-   - [x] Performance Analysis
 
 ## Implementations
  This section talks in detail about the three different implementations of the ICP algorithm. There are following flags in the `main.cpp` file to control the current implementation (default is set to the most optimal KDTree based GPU implementation):
